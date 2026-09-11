@@ -5,6 +5,8 @@ internet radio, private media uploads, and scheduled playback.
 
 Designed by **Sukhpal Gill**.
 
+![Media Hub Dashboard](images/screenshot_1_player_ha.png)
+
 ## Why I built Media Hub
 
 I was asked by a school to set up a smart school bell that would ring over Sonos
@@ -43,6 +45,23 @@ That is why I built **Media Hub**.
 - Home Assistant Ingress and sidebar access.
 - Responsive desktop/mobile UI with light/dark support.
 - Persistent settings, radio stations, schedules, and uploaded audio.
+
+## Screenshots
+
+### 1. Player & Home Assistant Media Library
+Browse local Home Assistant audio, discover Sonos & Home Assistant speakers, play internet radio streams, and control playback.
+
+![Player and Home Assistant Media Library](images/screenshot_1_player_ha.png)
+
+### 2. Scheduled Playback & Timetables
+Create weekly recurring or one-time calendar schedules with flexible bulk time entry.
+
+![Scheduled Playback and Timetables](images/screenshot_2_schedules.png)
+
+### 3. Private Uploads Library
+Upload private MP3 files directly from your browser to dedicated persistent add-on storage.
+
+![Private Uploads Library](images/screenshot_3_player_library.png)
 
 ## Install
 

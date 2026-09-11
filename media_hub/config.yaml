@@ -1,0 +1,28 @@
+name: "Media Hub"
+version: "1.0.0"
+slug: "media_hub"
+description: "A complete Home Assistant media dashboard for local audio, private uploads, speakers, radio streams, and scheduled playback."
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: false
+homeassistant_api: true
+hassio_api: true
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: "mdi:music-circle"
+panel_title: "Media Hub"
+panel_admin: true
+watchdog: "http://[HOST]:[PORT:8099]/health"
+map:
+  - type: media
+    read_only: true
+ports:
+  8100/tcp: 8100
+ports_description:
+  8100/tcp: "LAN media/stream proxy used by network speakers"
+options: {}
+schema: {}

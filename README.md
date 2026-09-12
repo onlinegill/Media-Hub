@@ -1,7 +1,6 @@
 # Media Hub for Home Assistant
 
-**Media Hub** is a standalone Home Assistant App for local audio, speaker control,
-internet radio, private media uploads, and scheduled playback.
+**Media Hub** is a universal media player and audio manager for Home Assistant, bringing together multi-room speaker control, internet radio, local media libraries, private browser uploads, and recurring automated playback into a single dashboard.
 
 Designed by **Sukhpal Gill**.
 
@@ -14,7 +13,7 @@ changed. While building that system, I realized that managing audio files,
 speaker groups, radio streams, and large recurring timetables could be much
 easier from one dashboard.
 
-That is why I built **Media Hub**.
+What began as an automated bell system evolved into a complete **Universal Media Player** for Home Assistant—handling daily music playback, multi-room speaker grouping, live radio streaming, and automated audio schedules from one clean dashboard.
 
 ## Features
 

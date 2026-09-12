@@ -9,8 +9,7 @@ Designed by **Sukhpal Gill**.
 
 ## Why I built Media Hub
 
-I was asked by a school to set up a school bell, so I built this smart school
-bell that would ring over Sonos speakers every 45 minutes when the period
+I was asked by a school to set up a school bell, so I built this smart Media Hub that would ring over Sonos speakers every 45 minutes when the period
 changed. While building that system, I realized that managing audio files,
 speaker groups, radio streams, and large recurring timetables could be much
 easier from one dashboard.

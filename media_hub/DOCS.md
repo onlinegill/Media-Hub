@@ -5,10 +5,11 @@ internet radio, uploaded audio files, and scheduled playback from one interface.
 
 ## Why Media Hub exists
 
-I was asked by a school to set up a smart school bell that would ring over Sonos
-speakers every 45 minutes when the period changed. Building that system made me
-realize how useful it would be to have one simple Home Assistant media dashboard
-for local audio, speaker groups, radio streams, uploads, and recurring schedules.
+I was asked by a school to set up a school bell, so I built this smart school
+bell that would ring over Sonos speakers every 45 minutes when the period
+changed. Building that system made me realize how useful it would be to have
+one simple Home Assistant media dashboard for local audio, speaker groups, radio
+streams, uploads, and recurring schedules.
 
 That project became **Media Hub**.
 

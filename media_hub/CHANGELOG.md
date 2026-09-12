@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+### Fixed
+- Fixed issue where Now Playing displayed "Nothing playing" during active playback on speaker groups (such as "All Sonos") and media players without direct title attributes.
+- Inherited metadata and artwork from active group coordinator and member speakers.
+- Added active local playback session tracking so selected audio titles always show during playback.
+
 ## 1.0.0
 
 Initial public release.

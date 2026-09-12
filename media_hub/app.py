@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 from aiohttp import ClientSession, ClientTimeout, web
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -274,6 +274,8 @@ class MediaHub:
         self.scheduler_task: asyncio.Task | None = None
         # Runtime-only radio playback state, keyed by the output selected in the UI.
         self.active_radio_sessions: dict[str, dict[str, str]] = {}
+        # Runtime-only local media playback state, keyed by entity_id.
+        self.active_media_sessions: dict[str, dict[str, Any]] = {}
 
     async def start(self) -> None:
         await self.store.load()
@@ -418,6 +420,38 @@ class MediaHub:
             entity_picture = attrs.get("entity_picture")
             active_radio_id = ""
 
+            # Check member entities (e.g., Sonos groups, HA media_player groups)
+            members_to_check: list[str] = []
+            for m in group_members + helper_members:
+                m_str = str(m)
+                if (
+                    m_str.startswith("media_player.")
+                    and m_str in state_map
+                    and m_str not in members_to_check
+                ):
+                    members_to_check.append(m_str)
+
+            # If metadata is missing or entity is a group, borrow from active member/coordinator
+            if (not media_title or not entity_picture) and members_to_check:
+                for member_id in members_to_check:
+                    m_state = state_map.get(member_id) or {}
+                    m_attrs = m_state.get("attributes") or {}
+                    m_display = str(m_state.get("state", "unknown"))
+                    if m_display in ("playing", "paused") or display_state in (
+                        "playing",
+                        "paused",
+                    ):
+                        if not media_title and m_attrs.get("media_title"):
+                            media_title = m_attrs.get("media_title")
+                        if not media_artist and m_attrs.get("media_artist"):
+                            media_artist = m_attrs.get("media_artist")
+                        if not media_album_name and m_attrs.get("media_album_name"):
+                            media_album_name = m_attrs.get("media_album_name")
+                        if not entity_picture and m_attrs.get("entity_picture"):
+                            entity_picture = m_attrs.get("entity_picture")
+                        if media_title and entity_picture:
+                            break
+
             session = self.active_radio_sessions.get(entity_id)
             if session:
                 effective_id = session.get("effective_entity_id", "")
@@ -454,6 +488,21 @@ class MediaHub:
                     )
                 else:
                     stale_sessions.append(entity_id)
+
+            # Check local media session if title is still missing and player is active
+            if not media_title and display_state in ("playing", "paused"):
+                local_session = self.active_media_sessions.get(entity_id)
+                if not local_session:
+                    for m_id in members_to_check:
+                        local_session = self.active_media_sessions.get(m_id)
+                        if local_session:
+                            break
+                if local_session:
+                    media_title = local_session.get("title") or local_session.get(
+                        "path"
+                    )
+            elif display_state in ("idle", "off", "standby"):
+                self.active_media_sessions.pop(entity_id, None)
 
             result.append(
                 {
@@ -652,11 +701,13 @@ class MediaHub:
         if not file_path.is_file():
             raise HubError("The selected media file no longer exists.")
 
+        effective_entity_id = await self.resolve_play_target(entity_id)
+
         if volume is not None:
             await self.ha.call_service(
                 "volume_set",
                 {
-                    "entity_id": entity_id,
+                    "entity_id": effective_entity_id,
                     "volume_level": min(1.0, max(0.0, float(volume))),
                 },
             )
@@ -666,12 +717,23 @@ class MediaHub:
         quoted = urllib.parse.quote(relative_path.replace("\\", "/"), safe="/")
         media_url = f"{base}/media/{source}/{quoted}"
         data: dict[str, Any] = {
-            "entity_id": entity_id,
+            "entity_id": effective_entity_id,
             "media_content_id": media_url,
             "media_content_type": "music",
         }
         if announce:
             data["announce"] = True
+
+        session_info = {
+            "title": file_path.name,
+            "source": source,
+            "path": relative_path,
+            "effective_entity_id": effective_entity_id,
+        }
+        self.active_media_sessions[entity_id] = session_info
+        if effective_entity_id != entity_id:
+            self.active_media_sessions[effective_entity_id] = session_info
+
         await self.ha.call_service("play_media", data)
 
     async def play_radio(
@@ -1336,6 +1398,9 @@ async def api_control(request: web.Request) -> web.Response:
 
     if action == "stop":
         hub.active_radio_sessions.pop(entity_id, None)
+        hub.active_media_sessions.pop(entity_id, None)
+        if target_entity_id != entity_id:
+            hub.active_media_sessions.pop(target_entity_id, None)
 
     return json_response({"ok": True})
 

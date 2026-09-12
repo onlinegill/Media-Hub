@@ -104,7 +104,7 @@ created and stored locally by each Media Hub installation.
 
 ## Version
 
-**1.0.0 — Initial public release**
+**1.0.1 — Current release**
 
 ## License
 

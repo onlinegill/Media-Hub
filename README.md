@@ -65,12 +65,16 @@ Upload private MP3 files directly from your browser to dedicated persistent add-
 
 ## Install
 
-In Home Assistant:
+[![Open your Home Assistant instance and show the add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fonlinegill%2FMedia-Hub)
 
-**Settings → Apps → App Store → ⋮ → Repositories**
+Alternatively, in Home Assistant:
 
-Add the URL of this GitHub repository, refresh the App Store, and install
-**Media Hub**.
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
+2. Add the URL of this GitHub repository:
+   ```text
+   https://github.com/onlinegill/Media-Hub
+   ```
+3. Refresh the Add-on Store, and install **Media Hub**.
 
 Start the App once. It is configured to start automatically on future Home
 Assistant boots.

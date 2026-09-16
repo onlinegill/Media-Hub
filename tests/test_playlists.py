@@ -242,6 +242,12 @@ class PlaylistTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.get('/playlists.js')
             self.assertEqual(response.status, 200)
             self.assertIn('function openPlaylist', await response.text())
+            self.assertIn('no-store', response.headers.get('Cache-Control', ''))
+
+            page = await self.client.get('/')
+            self.assertEqual(page.status, 200)
+            self.assertIn('data-page="playlists"', await page.text())
+            self.assertIn('no-store', page.headers.get('Cache-Control', ''))
         response = await self.client.get('/api/bootstrap')
         self.assertEqual((await response.json())['playlists'], [self.playlist])
 

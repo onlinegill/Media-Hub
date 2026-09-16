@@ -109,7 +109,7 @@ created and stored locally by each Media Hub installation.
 
 ## Version
 
-**1.0.1 — Current release**
+**1.1.1 — Current release**
 
 ## License
 

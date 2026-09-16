@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import ClientSession, ClientTimeout, web
 from playlists import PlaylistMixin
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -626,8 +626,8 @@ class MediaHub(PlaylistMixin):
     async def probe_stream(self, source_url: str, max_depth: int = 4) -> dict[str, str]:
         current_url = source_url
         headers = {
-            "User-Agent": "MediaHub/1.0.0",
-                        "Accept": "*/*",
+            "User-Agent": f"MediaHub/{APP_VERSION}",
+            "Accept": "*/*",
         }
 
         for _ in range(max_depth):
@@ -1110,8 +1110,22 @@ async def api_error_middleware(request: web.Request, handler):
         )
 
 
+def ui_file_response(path) -> web.FileResponse:
+    # The UI shell and scripts change between releases. Never let browsers or
+    # the ingress proxy cache them, or users keep seeing an old interface
+    # (e.g. a new tab missing) even after updating the App.
+    return web.FileResponse(
+        path,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 async def ui_index(request: web.Request) -> web.Response:
-    return web.FileResponse(WEB_ROOT / "index.html")
+    return ui_file_response(WEB_ROOT / "index.html")
 
 
 async def ui_logo(request: web.Request) -> web.Response:
@@ -1127,7 +1141,7 @@ async def health(request: web.Request) -> web.Response:
 
 
 async def ui_playlists_script(request: web.Request) -> web.Response:
-    return web.FileResponse(WEB_ROOT / "playlists.js")
+    return ui_file_response(WEB_ROOT / "playlists.js")
 
 
 async def api_bootstrap(request: web.Request) -> web.Response:
@@ -1705,8 +1719,8 @@ async def open_radio_upstream(
 ) -> tuple[Any, bytes, str]:
     current_url = str(station.get("url") or "")
     headers = {
-        "User-Agent": "MediaHub/1.0.0",
-                "Accept": "*/*",
+        "User-Agent": f"MediaHub/{APP_VERSION}",
+        "Accept": "*/*",
     }
     if request.headers.get("Range"):
         headers["Range"] = request.headers["Range"]

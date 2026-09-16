@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+- Never cache the dashboard page and playlist script, so a new tab (such as Playlists) appears immediately after updating instead of a stale cached interface.
+- Report the real App version in the startup log instead of a hardcoded older version.
+- Send the running App version in outbound HTTP User-Agent headers.
+
 ## 1.1.0
 
 ### Added

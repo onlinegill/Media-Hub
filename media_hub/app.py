@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import ClientSession, ClientTimeout, web
 from playlists import PlaylistMixin
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")

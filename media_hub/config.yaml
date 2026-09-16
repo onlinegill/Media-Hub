@@ -1,5 +1,5 @@
 name: "Media Hub"
-version: "1.1.1"
+version: "1.1.2"
 slug: "media_hub"
 description: "A complete Home Assistant media dashboard for local audio, private uploads, speakers, radio streams, and scheduled playback."
 arch:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2
+
+### Fixed
+- Restore App startup after 1.1.1. The startup log used an invalid `bashio`
+  version expression, which stopped the container from launching. The log message
+  no longer references the version; the running version is still logged by the App.
+
 ## 1.1.1
 
 ### Fixed

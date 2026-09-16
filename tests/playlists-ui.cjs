@@ -18,7 +18,7 @@ const assert = require('assert/strict');
     let data = {ok: true};
     if (url.pathname === '/') return route.fulfill({contentType: 'text/html', body: fs.readFileSync(path.join(__dirname, '../media_hub/web/index.html'), 'utf8')});
     if (url.pathname === '/playlists.js') return route.fulfill({contentType: 'text/javascript', body: fs.readFileSync(path.join(__dirname, '../media_hub/web/playlists.js'), 'utf8')});
-    if (url.pathname === '/api/bootstrap') data = {...data, version: '1.1.1', outputs: [output], playlists, schedules, queues, settings: {time_zone: 'America/Chicago'}};
+    if (url.pathname === '/api/bootstrap') data = {...data, version: '1.1.2', outputs: [output], playlists, schedules, queues, settings: {time_zone: 'America/Chicago'}};
     else if (url.pathname.startsWith('/api/media')) data.items = media;
     else if (url.pathname === '/api/outputs') data = {...data, outputs: [output], queues};
     else if (url.pathname === '/api/playlists') {

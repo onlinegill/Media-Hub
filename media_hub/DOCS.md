@@ -111,6 +111,48 @@ The scheduler accepts standard or compact 24-hour time:
 
 All valid entries are normalized to `HH:MM`.
 
+### Lunch and recess playlists
+
+1. Open **Playlists → New playlist**, enter a name such as **Lunch**, and add songs
+   from Home Assistant media or the Media Hub Library. Upload audio on the Player
+   tab first if necessary.
+2. Use the up/down buttons to arrange songs. Enable **Repeat until stopped** if
+   the music should loop until the end of the break, then save.
+3. Open **Schedules → New schedule**. Choose the playlist under Media, select
+   the speaker/group, and set the volume.
+4. Enter the lunch start time for the school weekdays and an optional **Stop time**.
+   For example, Monday–Friday at **12:00**, stopping at **12:30**. Stop times use
+   the Home Assistant time zone and must follow every start time on the same day.
+5. Create a separate **Recess** schedule with its own start and stop times. Use
+   **Run now** before that day's stop time to test, or **Play** on a playlist to
+   test without a timed stop. Manual Play uses the output selected on the Player tab.
+
+Songs advance automatically, and the dashboard can be closed. Now Playing shows
+the playlist and song number. Pause/resume, Stop, and Next control the active queue.
+A playlist without repeat finishes after its last song. With repeat enabled and
+no stop time, it continues until stopped.
+
+Use **Stop in Media Hub** to cancel the queue. Starting another file, radio station,
+or playlist on that output cancels the previous queue, including its stop timer.
+Scheduled announcements also replace a queue; it does not resume after the bell.
+Editing a playlist affects its next run. Schedules reference the saved playlist,
+so remove or change those schedules before deleting it.
+
+Automatic advancement requires the speaker integration to report **playing** and
+then **idle** at the end of a song; pauses and buffering do not advance the queue.
+There may be a short gap between songs. A stop issued outside Media Hub can look
+like a finished song and advance the queue; use Media Hub's Stop button instead.
+If playback cannot be confirmed within 60 seconds, a song is missing, or the speaker
+becomes unavailable, the queue ends and errors are recorded in the app log.
+Known changes to the playing media outside Media Hub relinquish queue control.
+Test playback and transitions on the actual speaker/group before unattended use.
+
+Saved playlists and schedules survive app restarts; active queues and stop timers
+do not. Restarting the app during playback stops advancement but may leave the
+current song playing on the speaker. Stop it manually if needed. Start times missed
+while the app is offline are not replayed. Weekly schedules run on every selected
+weekday, including school holidays, unless disabled.
+
 ### Time zone handling
 
 Schedules use the time zone configured in Home Assistant. The detected time zone

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import mimetypes
+import math
 import os
 import re
 import secrets
@@ -18,8 +19,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from aiohttp import ClientSession, ClientTimeout, web
+from playlists import PlaylistMixin
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.0"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -158,12 +160,13 @@ class Store:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self.data: dict[str, Any] = {
-            "version": 2,
+            "version": 3,
             "media_token": secrets.token_urlsafe(28),
             "default_output": "",
             "host_override": "",
             "radios": [],
             "schedules": [],
+            "playlists": [],
             "last_runs": {},
         }
 
@@ -186,7 +189,9 @@ class Store:
             self.data["schedules"] = []
         if not isinstance(self.data.get("last_runs"), dict):
             self.data["last_runs"] = {}
-        self.data["version"] = 2
+        if not isinstance(self.data.get("playlists"), list):
+            self.data["playlists"] = []
+        self.data["version"] = 3
         await self.save()
 
     async def save(self) -> None:
@@ -213,6 +218,7 @@ class Store:
                 for item in self.data.get("radios", [])
             ],
             "schedules": self.data.get("schedules", []),
+            "playlists": self.data.get("playlists", []),
         }
 
 
@@ -230,6 +236,7 @@ class HAClient:
     async def _json(self, method: str, url: str, **kwargs: Any) -> Any:
         headers = dict(self.headers)
         headers.update(kwargs.pop("headers", {}))
+        kwargs.setdefault("timeout", ClientTimeout(total=10))
         async with self.session.request(method, url, headers=headers, **kwargs) as resp:
             text = await resp.text()
             if resp.status >= 400:
@@ -263,7 +270,7 @@ class HAClient:
         return data if isinstance(data, dict) else {}
 
 
-class MediaHub:
+class MediaHub(PlaylistMixin):
     def __init__(self) -> None:
         timeout = ClientTimeout(total=None, connect=10, sock_connect=10, sock_read=None)
         self.session = ClientSession(timeout=timeout)
@@ -272,6 +279,7 @@ class MediaHub:
         self.detected_host = ""
         self.time_zone = "UTC"
         self.scheduler_task: asyncio.Task | None = None
+        self.init_playlists()
         # Runtime-only radio playback state, keyed by the output selected in the UI.
         self.active_radio_sessions: dict[str, dict[str, str]] = {}
         # Runtime-only local media playback state, keyed by entity_id.
@@ -291,12 +299,19 @@ class MediaHub:
             LOGGER.debug("Time zone detection unavailable: %s", safe_error(exc))
         await self.refresh_host()
         self.scheduler_task = asyncio.create_task(self.scheduler_loop())
+        self.playlist_task = asyncio.create_task(self.playlist_loop())
 
     async def close(self) -> None:
         if self.scheduler_task:
             self.scheduler_task.cancel()
             try:
                 await self.scheduler_task
+            except asyncio.CancelledError:
+                pass
+        if self.playlist_task:
+            self.playlist_task.cancel()
+            try:
+                await self.playlist_task
             except asyncio.CancelledError:
                 pass
         await self.session.close()
@@ -575,6 +590,9 @@ class MediaHub:
 
                 return candidates[0]
 
+        members = attrs.get("group_members")
+        if isinstance(members, list) and members and members[0] in state_map:
+            return str(members[0])
         return requested_entity_id
 
     async def wait_for_playing(
@@ -687,7 +705,7 @@ class MediaHub:
 
         raise HubError("Too many nested playlist redirects.")
 
-    async def play_local(
+    async def _play_local(
         self,
         entity_id: str,
         source: str,
@@ -695,7 +713,7 @@ class MediaHub:
         browser_host: str = "",
         announce: bool = False,
         volume: float | None = None,
-    ) -> None:
+    ) -> str:
         root = MEDIA_ROOT if source == "ha" else LIBRARY_ROOT
         file_path = resolve_path(root, relative_path)
         if not file_path.is_file():
@@ -734,9 +752,12 @@ class MediaHub:
         if effective_entity_id != entity_id:
             self.active_media_sessions[effective_entity_id] = session_info
 
+        self.active_radio_sessions.pop(entity_id, None)
+        self.active_radio_sessions.pop(effective_entity_id, None)
         await self.ha.call_service("play_media", data)
+        return media_url
 
-    async def play_radio(
+    async def _play_radio(
         self,
         station_id: str,
         entity_id: str,
@@ -887,6 +908,21 @@ class MediaHub:
 
     async def execute_schedule(self, schedule: dict[str, Any]) -> None:
         try:
+            if schedule.get("playlist_id"):
+                now = datetime.now(ZoneInfo(self.time_zone))
+                stop_at = None
+                if schedule.get("stop_time"):
+                    hour, minute = map(int, schedule["stop_time"].split(":"))
+                    stop_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                    if stop_at <= now:
+                        raise HubError("The playlist stop time has already passed today.")
+                playlist = playlist_by_id(self, schedule["playlist_id"])
+                sanitize_playlist(playlist, playlist["id"])
+                await self.start_playlist(
+                    playlist, schedule["entity_id"],
+                    volume=schedule.get("volume"), stop_at=stop_at,
+                )
+                return
             await self.play_local(
                 str(schedule["entity_id"]),
                 str(schedule.get("source") or "ha"),
@@ -1090,6 +1126,10 @@ async def health(request: web.Request) -> web.Response:
     return json_response({"status": "ok", "version": APP_VERSION})
 
 
+async def ui_playlists_script(request: web.Request) -> web.Response:
+    return web.FileResponse(WEB_ROOT / "playlists.js")
+
+
 async def api_bootstrap(request: web.Request) -> web.Response:
     hub = require_hub()
     outputs = await hub.outputs()
@@ -1108,12 +1148,15 @@ async def api_bootstrap(request: web.Request) -> web.Response:
             },
             "radios": snapshot["radios"],
             "schedules": snapshot["schedules"],
+            "playlists": snapshot["playlists"],
+            "queues": hub.queue_snapshot(),
         }
     )
 
 
 async def api_outputs(request: web.Request) -> web.Response:
-    return json_response({"ok": True, "outputs": await require_hub().outputs()})
+    return json_response({"ok": True, "outputs": await require_hub().outputs(),
+                          "queues": require_hub().queue_snapshot()})
 
 
 async def api_media(request: web.Request) -> web.Response:
@@ -1374,7 +1417,15 @@ async def api_control(request: web.Request) -> web.Response:
     if not entity_id.startswith("media_player."):
         raise HubError("Choose a media player.")
 
+    async with hub.playback_lock:
+        if await hub.playlist_control(entity_id, action):
+            return json_response({"ok": True})
+        return await control_single(hub, entity_id, action, payload)
+
+
+async def control_single(hub, entity_id, action, payload):
     mapping = {
+        "next": "media_next_track",
         "play": "media_play",
         "pause": "media_pause",
         "stop": "media_stop",
@@ -1387,7 +1438,7 @@ async def api_control(request: web.Request) -> web.Response:
     target_entity_id = (
         session.get("effective_entity_id", entity_id)
         if session
-        else entity_id
+        else await hub.resolve_play_target(entity_id)
     )
 
     data: dict[str, Any] = {"entity_id": target_entity_id}
@@ -1422,11 +1473,80 @@ async def api_volume(request: web.Request) -> web.Response:
     return json_response({"ok": True})
 
 
+def playlist_by_id(hub, playlist_id):
+    for playlist in hub.store.data.get("playlists", []):
+        if playlist["id"] == playlist_id:
+            return playlist
+    raise HubError("Playlist was not found.")
+
+
+def sanitize_playlist(payload, existing_id=None):
+    name = str(payload.get("name") or "").strip()[:120]
+    tracks = payload.get("tracks")
+    if not name:
+        raise HubError("Enter a playlist name.")
+    if not isinstance(tracks, list) or not 1 <= len(tracks) <= 500:
+        raise HubError("Choose between 1 and 500 songs.")
+    clean = []
+    for track in tracks:
+        if not isinstance(track, dict) or track.get("source") not in ("ha", "library"):
+            raise HubError("Unknown media source.")
+        source = track["source"]
+        path = str(track.get("path") or "")
+        file = resolve_path(MEDIA_ROOT if source == "ha" else LIBRARY_ROOT, path)
+        if not file.is_file() or file.suffix.lower() not in AUDIO_EXTENSIONS:
+            raise HubError(f"Song is missing or unsupported: {path}")
+        clean.append({"source": source, "path": path})
+    return {"id": existing_id or uuid.uuid4().hex, "name": name,
+            "tracks": clean, "repeat": bool(payload.get("repeat", False))}
+
+
+async def api_playlist_save(request):
+    hub = require_hub()
+    playlist_id = request.match_info.get("playlist_id")
+    if playlist_id:
+        playlist_by_id(hub, playlist_id)
+    playlist = sanitize_playlist(await request.json(), playlist_id)
+    playlists = hub.store.data.setdefault("playlists", [])
+    if playlist_id:
+        playlists[ next(i for i, p in enumerate(playlists) if p["id"] == playlist_id) ] = playlist
+    else:
+        playlists.append(playlist)
+    await hub.store.save()
+    return json_response({"ok": True, "playlist": playlist})
+
+
+async def api_playlist_delete(request):
+    hub = require_hub()
+    playlist_id = request.match_info["playlist_id"]
+    playlist_by_id(hub, playlist_id)
+    if any(s.get("playlist_id") == playlist_id for s in hub.store.data.get("schedules", [])):
+        raise HubError("Edit or delete schedules using this playlist before deleting it.")
+    hub.store.data["playlists"] = [p for p in hub.store.data["playlists"] if p["id"] != playlist_id]
+    await hub.store.save()
+    return json_response({"ok": True})
+
+
+async def api_playlist_play(request):
+    hub = require_hub()
+    payload = await request.json()
+    entity_id = str(payload.get("entity_id") or "")
+    if not entity_id.startswith("media_player."):
+        raise HubError("Choose an output.")
+    playlist = playlist_by_id(hub, request.match_info["playlist_id"])
+    # Validate all tracks before interrupting existing playback.
+    sanitize_playlist(playlist, playlist["id"])
+    await hub.start_playlist(playlist, entity_id, str(payload.get("browser_host") or ""))
+    return json_response({"ok": True})
+
+
 def sanitize_schedule(payload: dict[str, Any], existing_id: str | None = None) -> dict[str, Any]:
     name = str(payload.get("name") or "").strip()[:120]
     entity_id = str(payload.get("entity_id") or "").strip()
     source = str(payload.get("source") or "ha")
     path = str(payload.get("path") or "").strip()
+    playlist_id = str(payload.get("playlist_id") or "")
+    stop_time = str(payload.get("stop_time") or "")
     mode = str(payload.get("mode") or "weekly")
 
     if not name:
@@ -1437,12 +1557,20 @@ def sanitize_schedule(payload: dict[str, Any], existing_id: str | None = None) -
         raise HubError("Unknown media source.")
 
     root = MEDIA_ROOT if source == "ha" else LIBRARY_ROOT
-    if not resolve_path(root, path).is_file():
+    if playlist_id:
+        playlist_by_id(require_hub(), playlist_id)
+        if payload.get("announce"):
+            raise HubError("Announcement mode is only available for individual files.")
+    elif not resolve_path(root, path).is_file():
         raise HubError("Choose a valid media file.")
+    if stop_time and (not playlist_id or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", stop_time)):
+        raise HubError("Choose a valid playlist stop time (HH:MM).")
 
     try:
         raw_volume = payload.get("volume")
-        volume = None if raw_volume in (None, "", False) else min(1.0, max(0.0, float(raw_volume)))
+        volume = None if raw_volume is None or raw_volume == "" else float(raw_volume)
+        if volume is not None and (not math.isfinite(volume) or not 0 <= volume <= 1):
+            raise ValueError("Volume out of range")
     except (TypeError, ValueError) as exc:
         raise HubError("Invalid schedule volume.") from exc
 
@@ -1453,7 +1581,9 @@ def sanitize_schedule(payload: dict[str, Any], existing_id: str | None = None) -
         "entity_id": entity_id,
         "source": source,
         "path": path,
-        "media_name": str(payload.get("media_name") or Path(path).name)[:180],
+        "playlist_id": playlist_id,
+        "stop_time": stop_time,
+        "media_name": playlist_by_id(require_hub(), playlist_id)["name"] if playlist_id else str(payload.get("media_name") or Path(path).name)[:180],
         "announce": bool(payload.get("announce", False)),
         "volume": volume,
         "mode": mode if mode in ("weekly", "once") else "weekly",
@@ -1481,6 +1611,9 @@ def sanitize_schedule(payload: dict[str, Any], existing_id: str | None = None) -
             raise HubError("Add at least one weekday and time.")
         schedule["week"] = week
 
+    starts = schedule.get("times", []) if schedule["mode"] == "once" else [t for times in schedule["week"].values() for t in times]
+    if stop_time and any(t >= stop_time for t in starts):
+        raise HubError("Stop time must be later than every start time on the same day. Use separate Lunch and Recess schedules.")
     return schedule
 
 
@@ -1690,6 +1823,7 @@ def create_ui_app() -> web.Application:
     app.router.add_get("/", ui_index)
     app.router.add_get("/logo.png", ui_logo)
     app.router.add_get("/icon.png", ui_icon)
+    app.router.add_get("/playlists.js", ui_playlists_script)
     app.router.add_get("/health", health)
 
     app.router.add_get("/api/bootstrap", api_bootstrap)
@@ -1711,6 +1845,10 @@ def create_ui_app() -> web.Application:
     app.router.add_post("/api/control", api_control)
     app.router.add_post("/api/volume", api_volume)
 
+    app.router.add_post("/api/playlists", api_playlist_save)
+    app.router.add_put("/api/playlists/{playlist_id}", api_playlist_save)
+    app.router.add_delete("/api/playlists/{playlist_id}", api_playlist_delete)
+    app.router.add_post("/api/playlists/{playlist_id}/play", api_playlist_play)
     app.router.add_post("/api/schedules", api_schedule_add)
     app.router.add_put("/api/schedules/{schedule_id}", api_schedule_update)
     app.router.add_delete("/api/schedules/{schedule_id}", api_schedule_delete)

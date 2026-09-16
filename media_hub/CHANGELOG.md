@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+- Saved playlists with ordered songs from Home Assistant media and private uploads.
+- Automatic next-song playback, repeat, pause/resume, stop, and next-song controls.
+- Weekly and one-time playlist schedules with output, volume, and optional same-day stop time.
+- Playlist progress in Now Playing; playback continues with the dashboard closed.
+
+### Fixed
+- Resolve grouped speaker controls to their coordinator.
+- Preserve disabled schedules when editing and allow a scheduled volume of zero.
+
 ## 1.0.1
 
 ### Fixed

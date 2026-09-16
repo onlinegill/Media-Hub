@@ -12,7 +12,7 @@ LABEL \
 RUN apk add --no-cache python3 py3-aiohttp
 
 WORKDIR /app
-COPY app.py /app/app.py
+COPY app.py playlists.py /app/
 COPY web /app/web
 COPY logo.png /app/logo.png
 COPY run.sh /run.sh

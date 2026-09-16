@@ -32,6 +32,8 @@ What began as an automated bell system evolved into a complete **Universal Media
 - Audio MIME detection and tokenized LAN stream proxy for network speakers.
 - Verify real playback state before reporting a radio stream as playing.
 - Weekly recurring playback schedules.
+- Saved, ordered playlists with automatic next-song playback and optional repeat.
+- Schedule lunch and recess playlists with a speaker/group, volume, and stop time.
 - One-time calendar-date schedules.
 - Bulk-add many times to multiple weekdays.
 - Different times can be maintained for each weekday.

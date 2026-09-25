@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'media_hub'))
 import app
+import playlists as playlists_module
 from aiohttp.test_utils import TestClient, TestServer
 
 
@@ -236,6 +237,34 @@ class PlaylistTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         await self.hub.run_due_schedules()
         self.hub.execute_schedule.assert_awaited_once_with(schedule)
+
+    async def test_shuffle_flag_defaults_and_persists(self):
+        self.assertFalse(self.playlist['shuffle'])
+        shuffled = app.sanitize_playlist({'name': 'Mix', 'tracks': self.playlist['tracks'], 'shuffle': True})
+        self.assertTrue(shuffled['shuffle'])
+        response = await self.client.post('/api/playlists', json={'name': 'Mix', 'tracks': self.playlist['tracks'], 'shuffle': True})
+        self.assertEqual(response.status, 200)
+        self.assertTrue((await response.json())['playlist']['shuffle'])
+
+    async def test_shuffle_reorders_queue_without_mutating_saved_playlist(self):
+        self.playlist['shuffle'] = True
+        with patch.object(playlists_module.random, 'shuffle', side_effect=lambda tracks: tracks.reverse()):
+            q = await self.start()
+        self.assertTrue(q['shuffle'])
+        self.assertEqual([t['path'] for t in q['tracks']], ['b.mp3', 'a.mp3'])
+        self.assertEqual([t['path'] for t in self.playlist['tracks']], ['a.mp3', 'b.mp3'])
+        self.assertIn('b.mp3', q['url'])
+        await self.playing()
+        await self.ended()
+        self.assertEqual(q['index'], 1)
+        self.assertIn('a.mp3', q['url'])
+
+    async def test_corrupt_stored_playlist_rejected_before_start(self):
+        self.playlist['tracks'] = []
+        response = await self.client.post(f"/api/playlists/{self.playlist['id']}/play",
+                                          json={'entity_id': self.target, 'browser_host': ''})
+        self.assertEqual(response.status, 400)
+        self.assertFalse(self.hub.queues)
 
     async def test_script_is_served_and_bootstrap_exposes_playlists(self):
         with patch.object(app, 'WEB_ROOT', Path(__file__).resolve().parents[1] / 'media_hub/web'):

@@ -917,7 +917,7 @@ class MediaHub(PlaylistMixin):
                     if stop_at <= now:
                         raise HubError("The playlist stop time has already passed today.")
                 playlist = playlist_by_id(self, schedule["playlist_id"])
-                sanitize_playlist(playlist, playlist["id"])
+                playlist = sanitize_playlist(playlist, playlist["id"])
                 await self.start_playlist(
                     playlist, schedule["entity_id"],
                     volume=schedule.get("volume"), stop_at=stop_at,
@@ -1512,7 +1512,8 @@ def sanitize_playlist(payload, existing_id=None):
             raise HubError(f"Song is missing or unsupported: {path}")
         clean.append({"source": source, "path": path})
     return {"id": existing_id or uuid.uuid4().hex, "name": name,
-            "tracks": clean, "repeat": bool(payload.get("repeat", False))}
+            "tracks": clean, "repeat": bool(payload.get("repeat", False)),
+            "shuffle": bool(payload.get("shuffle", False))}
 
 
 async def api_playlist_save(request):
@@ -1549,7 +1550,7 @@ async def api_playlist_play(request):
         raise HubError("Choose an output.")
     playlist = playlist_by_id(hub, request.match_info["playlist_id"])
     # Validate all tracks before interrupting existing playback.
-    sanitize_playlist(playlist, playlist["id"])
+    playlist = sanitize_playlist(playlist, playlist["id"])
     await hub.start_playlist(playlist, entity_id, str(payload.get("browser_host") or ""))
     return json_response({"ok": True})
 

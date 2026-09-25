@@ -6,7 +6,7 @@ function scheduleMediaOptions(schedule) {
 function renderPlaylists() {
   $("#playlistGrid").innerHTML = state.playlists.length ? state.playlists.map(p => {
     const active = state.queues.find(q => q.playlist_id === p.id);
-    return `<div class="schedule-card"><div class="schedule-name">${esc(p.name)}</div><div class="small">${p.tracks.length} songs · ${p.repeat ? "Repeat" : "Play once"}</div>${active ? `<div class="small">Song ${active.track} of ${active.total} · ${esc(state.outputs.find(o => o.entity_id === active.entity_id)?.name || active.entity_id)}</div>` : ""}<div class="schedule-actions"><button class="btn primary" data-pplay="${p.id}">▶ Play</button><button class="btn" data-pedit="${p.id}">Edit</button><button class="btn danger" data-pdelete="${p.id}">Delete</button></div></div>`;
+    return `<div class="schedule-card"><div class="schedule-name">${esc(p.name)}</div><div class="small">${p.tracks.length} songs · ${p.repeat ? "Repeat" : "Play once"}${p.shuffle ? " · Shuffle" : ""}</div>${active ? `<div class="small">Song ${active.track} of ${active.total} · ${esc(state.outputs.find(o => o.entity_id === active.entity_id)?.name || active.entity_id)}</div>` : ""}<div class="schedule-actions"><button class="btn primary" data-pplay="${p.id}">▶ Play</button><button class="btn" data-pedit="${p.id}">Edit</button><button class="btn danger" data-pdelete="${p.id}">Delete</button></div></div>`;
   }).join("") : '<div class="empty">Create a Lunch or Recess playlist, then choose it in Schedules.</div>';
   document.querySelectorAll("[data-pplay]").forEach(b => b.onclick = async () => {
     if (!state.selectedOutput) { toast("Choose an output on the Player tab first.", true); return; }
@@ -30,9 +30,9 @@ function renderPlaylists() {
 }
 
 function openPlaylist(id = "") {
-  const playlist = state.playlists.find(p => p.id === id) || {name: "", tracks: [], repeat: false};
+  const playlist = state.playlists.find(p => p.id === id) || {name: "", tracks: [], repeat: false, shuffle: false};
   const tracks = playlist.tracks.map(t => ({...t}));
-  $("#modalRoot").innerHTML = `<div class="modal-bg"><div class="modal"><h2>${id ? "Edit" : "New"} playlist</h2><p>Add songs in the order you want them played. Use Schedules for automatic lunch and recess playback.</p><label class="label" for="playlistName">Name</label><input id="playlistName" class="field" value="${esc(playlist.name)}" placeholder="Lunch"><label class="label" for="playlistSong">Add a song</label><select id="playlistSong" class="select">${mediaOptions()}</select><button id="addSong" class="btn" style="margin-top:8px">＋ Add song</button><ol id="playlistTracks" style="padding-left:24px;max-height:300px;overflow:auto"></ol><label class="day-check"><input id="playlistRepeat" type="checkbox" ${playlist.repeat ? "checked" : ""}> Repeat until stopped</label><p class="small">Changes apply the next time this playlist starts. An active playlist keeps its current song order.</p><div class="modal-actions"><button id="cancelPlaylist" class="btn">Cancel</button><button id="savePlaylist" class="btn primary">Save playlist</button></div></div></div>`;
+  $("#modalRoot").innerHTML = `<div class="modal-bg"><div class="modal"><h2>${id ? "Edit" : "New"} playlist</h2><p>Add songs in the order you want them played. Use Schedules for automatic lunch and recess playback.</p><label class="label" for="playlistName">Name</label><input id="playlistName" class="field" value="${esc(playlist.name)}" placeholder="Lunch"><label class="label" for="playlistSong">Add a song</label><select id="playlistSong" class="select">${mediaOptions()}</select><button id="addSong" class="btn" style="margin-top:8px">＋ Add song</button><ol id="playlistTracks" style="padding-left:24px;max-height:300px;overflow:auto"></ol><label class="day-check"><input id="playlistRepeat" type="checkbox" ${playlist.repeat ? "checked" : ""}> Repeat until stopped</label><label class="day-check"><input id="playlistShuffle" type="checkbox" ${playlist.shuffle ? "checked" : ""}> Shuffle song order</label><p class="small">Changes apply the next time this playlist starts. An active playlist keeps its current song order.</p><div class="modal-actions"><button id="cancelPlaylist" class="btn">Cancel</button><button id="savePlaylist" class="btn primary">Save playlist</button></div></div></div>`;
   const renderTracks = () => {
     $("#playlistTracks").innerHTML = tracks.map((t, i) => `<li style="margin:10px 0"><div style="overflow-wrap:anywhere">${esc(t.path)} <span class="small">(${t.source === "ha" ? "Home Assistant" : "Library"})</span></div><button class="mini" data-up="${i}" aria-label="Move song ${i + 1} up" ${i === 0 ? "disabled" : ""}>↑</button> <button class="mini" data-down="${i}" aria-label="Move song ${i + 1} down" ${i === tracks.length - 1 ? "disabled" : ""}>↓</button> <button class="mini" data-remove="${i}" aria-label="Remove song ${i + 1}">Remove</button></li>`).join("");
     document.querySelectorAll("[data-up]").forEach(b => b.onclick = () => { const i = +b.dataset.up; [tracks[i-1], tracks[i]] = [tracks[i], tracks[i-1]]; renderTracks(); });
@@ -51,7 +51,7 @@ function openPlaylist(id = "") {
   $("#savePlaylist").onclick = async () => {
     const b = $("#savePlaylist"); b.disabled = true;
     try {
-      const d = await api(id ? `api/playlists/${id}` : "api/playlists", {method: id ? "PUT" : "POST", body: JSON.stringify({name: $("#playlistName").value, tracks, repeat: $("#playlistRepeat").checked})});
+      const d = await api(id ? `api/playlists/${id}` : "api/playlists", {method: id ? "PUT" : "POST", body: JSON.stringify({name: $("#playlistName").value, tracks, repeat: $("#playlistRepeat").checked, shuffle: $("#playlistShuffle").checked})});
       if (id) state.playlists[state.playlists.findIndex(p => p.id === id)] = d.playlist;
       else state.playlists.push(d.playlist);
       $("#modalRoot").innerHTML = "";

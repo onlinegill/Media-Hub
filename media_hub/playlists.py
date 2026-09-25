@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -37,10 +38,15 @@ class PlaylistMixin:
         async with self.playback_lock:
             target = await self.resolve_play_target(entity_id)
             self.cancel_queue(entity_id, target)
+            tracks = copy.deepcopy(playlist["tracks"])
+            if playlist.get("shuffle"):
+                random.shuffle(tracks)
             queue = {
                 "playlist_id": playlist["id"], "name": playlist["name"],
-                "tracks": copy.deepcopy(playlist["tracks"]), "index": 0,
-                "repeat": playlist.get("repeat", False), "entity_id": entity_id,
+                "tracks": tracks, "index": 0,
+                "repeat": playlist.get("repeat", False),
+                "shuffle": playlist.get("shuffle", False),
+                "entity_id": entity_id,
                 "target": target, "browser_host": browser_host,
                 "stop_at": stop_at, "paused": False,
             }

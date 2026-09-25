@@ -117,7 +117,8 @@ All valid entries are normalized to `HH:MM`.
    from Home Assistant media or the Media Hub Library. Upload audio on the Player
    tab first if necessary.
 2. Use the up/down buttons to arrange songs. Enable **Repeat until stopped** if
-   the music should loop until the end of the break, then save.
+   the music should loop until the end of the break. Enable **Shuffle song order**
+   to randomize playback each time the playlist starts, then save.
 3. Open **Schedules → New schedule**. Choose the playlist under Media, select
    the speaker/group, and set the volume.
 4. Enter the lunch start time for the school weekdays and an optional **Stop time**.
@@ -130,7 +131,8 @@ All valid entries are normalized to `HH:MM`.
 Songs advance automatically, and the dashboard can be closed. Now Playing shows
 the playlist and song number. Pause/resume, Stop, and Next control the active queue.
 A playlist without repeat finishes after its last song. With repeat enabled and
-no stop time, it continues until stopped.
+no stop time, it continues until stopped. With shuffle enabled, the song order is
+randomized each time the playlist starts; the saved order is kept for editing.
 
 Use **Stop in Media Hub** to cancel the queue. Starting another file, radio station,
 or playlist on that output cancels the previous queue, including its stop timer.

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Playlist shuffle option: randomize the song order each time a playlist starts.
+  The toggle sits next to "Repeat until stopped" in the playlist editor, and the
+  saved song order is preserved for editing.
+
+### Fixed
+- Playlist Play and scheduled starts now use the validated playlist, so a stored
+  playlist with missing or invalid songs is rejected cleanly instead of failing
+  mid-start.
+
 ## 1.1.2
 
 ### Fixed

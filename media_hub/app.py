@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import ClientSession, ClientTimeout, web
 from playlists import PlaylistMixin
 
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.2.1"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -285,18 +285,56 @@ class MediaHub(PlaylistMixin):
         # Runtime-only local media playback state, keyed by entity_id.
         self.active_media_sessions: dict[str, dict[str, Any]] = {}
 
-    async def start(self) -> None:
-        await self.store.load()
+    @staticmethod
+    def _addon_time_zone() -> str:
+        """Scheduler time zone from the add-on configuration.
+
+        Reads /data/options.json, where Home Assistant writes the add-on
+        options. Returns "" when unset or invalid so auto-detection applies.
+        """
+        try:
+            raw = Path("/data/options.json").read_text(encoding="utf-8")
+            tz = str(json.loads(raw).get("time_zone") or "").strip()
+            if tz:
+                return str(ZoneInfo(tz))
+        except Exception as exc:
+            LOGGER.debug("Add-on time zone option unavailable: %s", safe_error(exc))
+        return ""
+
+    async def _detect_time_zone(self) -> str:
+        """Scheduler time zone from the Home Assistant core config."""
         try:
             cfg = await self.ha.core_config()
             tz = str(cfg.get("time_zone") or "UTC")
             try:
-                ZoneInfo(tz)
-                self.time_zone = tz
+                return str(ZoneInfo(tz))
             except Exception:
-                self.time_zone = "UTC"
+                return "UTC"
         except Exception as exc:
             LOGGER.debug("Time zone detection unavailable: %s", safe_error(exc))
+            return "UTC"
+
+    async def refresh_time_zone(self) -> str:
+        """Resolve the scheduler time zone.
+
+        Priority: explicit setting (Media Hub settings UI, then the add-on
+        configuration option), then the Home Assistant core config,
+        then UTC as a last resort.
+        """
+        manual = str(self.store.data.get("time_zone") or "").strip()
+        if manual:
+            try:
+                self.time_zone = str(ZoneInfo(manual))
+                return self.time_zone
+            except Exception:
+                LOGGER.warning("Ignoring invalid saved time zone: %s", manual)
+        addon_tz = self._addon_time_zone()
+        self.time_zone = addon_tz or await self._detect_time_zone()
+        return self.time_zone
+
+    async def start(self) -> None:
+        await self.store.load()
+        await self.refresh_time_zone()
         await self.refresh_host()
         self.scheduler_task = asyncio.create_task(self.scheduler_loop())
         self.playlist_task = asyncio.create_task(self.playlist_loop())
@@ -341,12 +379,6 @@ class MediaHub(PlaylistMixin):
         # Fall back to Home Assistant's configured internal URL.
         try:
             cfg = await self.ha.core_config()
-            tz = str(cfg.get("time_zone") or "UTC")
-            try:
-                ZoneInfo(tz)
-                self.time_zone = tz
-            except Exception:
-                self.time_zone = "UTC"
             internal = cfg.get("internal_url") or ""
             if internal:
                 parsed = urllib.parse.urlparse(internal)
@@ -1159,6 +1191,7 @@ async def api_bootstrap(request: web.Request) -> web.Response:
                 "detected_host": hub.detected_host,
                 "public_port": PUBLIC_PORT,
                 "time_zone": hub.time_zone,
+                "time_zone_override": hub.store.data.get("time_zone", ""),
             },
             "radios": snapshot["radios"],
             "schedules": snapshot["schedules"],
@@ -1270,9 +1303,23 @@ async def api_save_settings(request: web.Request) -> web.Response:
                 raise HubError("Enter a valid local hostname or IP address.")
             value = parsed.hostname
         hub.store.data["host_override"] = value
+    if "time_zone" in payload:
+        value = str(payload.get("time_zone") or "").strip()
+        if value:
+            try:
+                ZoneInfo(value)
+            except Exception:
+                raise HubError("Unknown time zone. Use a name like America/Chicago.")
+        hub.store.data["time_zone"] = value
     await hub.store.save()
+    await hub.refresh_time_zone()
     await hub.refresh_host()
-    return json_response({"ok": True, "settings": hub.store.public_snapshot()})
+    return json_response({
+        "ok": True,
+        "settings": hub.store.public_snapshot(),
+        "time_zone": hub.time_zone,
+        "time_zone_override": hub.store.data.get("time_zone", ""),
+    })
 
 
 async def api_add_radio(request: web.Request) -> web.Response:

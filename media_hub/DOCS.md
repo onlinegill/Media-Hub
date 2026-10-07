@@ -160,6 +160,12 @@ weekday, including school holidays, unless disabled.
 Schedules use the time zone configured in Home Assistant. The detected time zone
 is shown inside Media Hub settings and on the Schedules page.
 
+If auto-detection fails (the page shows UTC instead of your Home Assistant time
+zone), set it explicitly: either enter it in Media Hub Settings ("Scheduler time
+zone", e.g. `America/Chicago`, applies immediately), or set the `time_zone`
+option in the add-on configuration and restart the add-on. The Settings UI value
+wins over the add-on option; both win over auto-detection.
+
 ### Home Assistant integration
 
 - Runs as a normal Home Assistant App.

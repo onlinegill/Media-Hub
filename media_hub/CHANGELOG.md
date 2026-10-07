@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- Scheduler time zone override: set `time_zone` in the add-on configuration
+  (e.g. `America/Chicago`), or edit it live in Media Hub Settings. Priority is
+  Settings UI, then the add-on option, then the Home Assistant time zone,
+  then UTC. Fixes schedules firing in UTC when HA time zone auto-detection
+  fails at startup.
+
+### Added
 - Playlist shuffle option: randomize the song order each time a playlist starts.
   The toggle sits next to "Repeat until stopped" in the playlist editor, and the
   saved song order is preserved for editing.

@@ -1,5 +1,5 @@
 name: "Media Hub"
-version: "1.2.0"
+version: "1.2.1"
 slug: "media_hub"
 description: "A complete Home Assistant media dashboard for local audio, private uploads, speakers, radio streams, and scheduled playback."
 arch:
@@ -24,5 +24,7 @@ ports:
   8100/tcp: 8100
 ports_description:
   8100/tcp: "LAN media/stream proxy used by network speakers"
-options: {}
-schema: {}
+options:
+  time_zone: ""
+schema:
+  time_zone: str

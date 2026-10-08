@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+- Bell playback resilience: `play_media` now gets a 30s timeout (up from 10s)
+  and one automatic retry when Sonos speakers are slow to acknowledge, so a
+  sluggish speaker no longer swallows a scheduled bell (TimeoutError seen
+  2026-10-08 at BBY).
+
 ### Added
 - Scheduler time zone override: set `time_zone` in the add-on configuration
   (e.g. `America/Chicago`), or edit it live in Media Hub Settings. Priority is

@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import ClientSession, ClientTimeout, web
 from playlists import PlaylistMixin
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -256,11 +256,12 @@ class HAClient:
         data = await self._json("GET", f"{HA_API}/config")
         return data if isinstance(data, dict) else {}
 
-    async def call_service(self, service: str, payload: dict[str, Any]) -> Any:
+    async def call_service(self, service: str, payload: dict[str, Any], timeout: float = 10.0) -> Any:
         return await self._json(
             "POST",
             f"{HA_API}/services/media_player/{service}",
             json=payload,
+            timeout=ClientTimeout(total=timeout),
         )
 
     async def supervisor_network(self) -> dict[str, Any]:
@@ -786,7 +787,25 @@ class MediaHub(PlaylistMixin):
 
         self.active_radio_sessions.pop(entity_id, None)
         self.active_radio_sessions.pop(effective_entity_id, None)
-        await self.ha.call_service("play_media", data)
+        # Sonos speakers can be slow to acknowledge play_media even while
+        # showing as available (same family of flakiness as HA core #158227).
+        # Give them longer than the default 10s API timeout and retry once
+        # before giving up, so a sluggish speaker doesn't swallow the bell.
+        last_exc: BaseException | None = None
+        for attempt in (1, 2):
+            try:
+                await self.ha.call_service("play_media", data, timeout=30.0)
+                last_exc = None
+                break
+            except asyncio.TimeoutError as exc:
+                last_exc = exc
+                LOGGER.warning(
+                    "play_media timed out (attempt %d/2) for %s; retrying",
+                    attempt, effective_entity_id,
+                )
+                await asyncio.sleep(2)
+        if last_exc is not None:
+            raise last_exc
         return media_url
 
     async def _play_radio(

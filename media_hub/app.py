@@ -791,6 +791,11 @@ class MediaHub(PlaylistMixin):
         # showing as available (same family of flakiness as HA core #158227).
         # Give them longer than the default 10s API timeout and retry once
         # before giving up, so a sluggish speaker doesn't swallow the bell.
+        # v1.2.3: HA may also answer HTTP 500 "Timeout while waiting for Sonos
+        # player to join the group" when the speakers are slow to group (seen
+        # 2026-10-09 at BBY). That surfaces as HubError, not TimeoutError, so
+        # treat it as retriable too — the first attempt often wakes the
+        # speakers enough for the retry to succeed.
         last_exc: BaseException | None = None
         for attempt in (1, 2):
             try:
@@ -804,6 +809,15 @@ class MediaHub(PlaylistMixin):
                     attempt, effective_entity_id,
                 )
                 await asyncio.sleep(2)
+            except HubError as exc:
+                if "join the group" not in str(exc).lower():
+                    raise
+                last_exc = exc
+                LOGGER.warning(
+                    "Sonos group join timed out (attempt %d/2) for %s; retrying",
+                    attempt, effective_entity_id,
+                )
+                await asyncio.sleep(5)
         if last_exc is not None:
             raise last_exc
         return media_url

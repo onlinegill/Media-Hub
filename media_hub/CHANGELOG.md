@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Fixed
+- Bell playback resilience (v1.2.3): when Home Assistant answers HTTP 500
+  "Timeout while waiting for Sonos player to join the group", the bell now
+  retries once after 5s instead of failing. The v1.2.2 retry only covered
+  client-side `play_media` timeouts; the group-join timeout surfaces as an HA
+  500 error and needed its own retry (seen 2026-10-09 at BBY).
+
+### Fixed
 - Bell playback resilience: `play_media` now gets a 30s timeout (up from 10s)
   and one automatic retry when Sonos speakers are slow to acknowledge, so a
   sluggish speaker no longer swallows a scheduled bell (TimeoutError seen

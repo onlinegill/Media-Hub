@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.2.4
+## 1.2.5
+
+### Fixed
+- Precision scheduler timing:
+  - Aligned the background scheduler check directly to the minute boundary (:00.00) instead of sleeping in 10-second intervals. Prevents school bells and schedules from firing 8–11 seconds late into the scheduled minute.
+- Sonos playlist track advancement:
+  - When playing standalone tracks, Sonos UPnP transport state transitions to `paused` at the end of a track. Updated `playlist_tick` to treat an unpaused queue ending in `paused` as a completed track and advance to the next song, preventing playlists from stopping after a single track.
 
 ### Fixed
 - Sonos coordinator resolution & fallback (`resolve_play_target` and `_play_local`):

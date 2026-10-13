@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import ClientSession, ClientTimeout, web
 from playlists import PlaylistMixin
 
-APP_VERSION = "1.2.4"
+APP_VERSION = "1.2.5"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -1051,13 +1051,17 @@ class MediaHub(PlaylistMixin):
         )
 
     async def scheduler_loop(self) -> None:
-        await asyncio.sleep(2)
         while True:
             try:
                 await self.run_due_schedules()
             except Exception:
                 LOGGER.exception("Scheduler check failed")
-            await asyncio.sleep(10)
+            zone = ZoneInfo(self.time_zone)
+            now = datetime.now(zone)
+            sleep_seconds = 60.0 - now.second - (now.microsecond / 1_000_000.0)
+            if sleep_seconds <= 0.05:
+                sleep_seconds = 0.1
+            await asyncio.sleep(min(sleep_seconds, 1.0))
 
     async def run_due_schedules(self) -> None:
         zone = ZoneInfo(self.time_zone)

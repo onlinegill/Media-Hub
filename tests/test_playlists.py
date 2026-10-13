@@ -391,6 +391,21 @@ class PlaylistTests(unittest.IsolatedAsyncioTestCase):
         await self.hub.playlist_tick()
         self.assertEqual(q['index'], 1)
 
+    async def test_playlist_advances_when_speaker_pauses_at_track_end(self):
+        await self.hub.start_playlist(self.playlist, self.target)
+        q = self.hub.queues[self.target]
+        self.player['state'] = 'playing'
+        self.player['attributes']['media_content_id'] = q['url']
+        await self.hub.playlist_tick()
+        self.assertTrue(q['seen_playing'])
+        # Sonos transitions to paused when track finishes:
+        self.player['state'] = 'paused'
+        await self.hub.playlist_tick()
+        self.assertEqual(q['index'], 0)
+        await self.hub.playlist_tick()
+        self.assertEqual(q['index'], 1)
+        self.assertIn('b.mp3', q['url'])
+
 
 if __name__ == '__main__':
     unittest.main()

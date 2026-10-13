@@ -112,13 +112,13 @@ class PlaylistMixin:
                     if status in ("off", "unavailable", "unknown"):
                         self.queues.pop(target, None)
                         continue
-                    if queue["paused"] or status == "paused":
+                    if queue["paused"]:
                         queue["idle_count"] = 0
                         continue
                     if status == "playing" and (not content or content == queue["url"]):
                         queue["seen_playing"] = True
                         queue["idle_count"] = 0
-                    elif status == "idle" and queue["seen_playing"]:
+                    elif status in ("idle", "paused") and queue["seen_playing"]:
                         queue["idle_count"] += 1
                         if queue["idle_count"] >= 2:
                             await self.advance_queue(queue)

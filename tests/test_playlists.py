@@ -280,6 +280,117 @@ class PlaylistTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get('/api/bootstrap')
         self.assertEqual((await response.json())['playlists'], [self.playlist])
 
+    async def test_resolve_play_target_skips_sonos_slaves_when_group_members_stale(self):
+        classroom = {
+            'entity_id': 'media_player.classroom_classroom',
+            'state': 'idle',
+            'attributes': {
+                'friendly_name': 'Classroom Classroom',
+                'group_members': ['media_player.classroom_classroom'],
+                'media_content_id': 'x-rincon:RINCON_000E58CDA3A201400',
+            },
+        }
+        hallway = {
+            'entity_id': 'media_player.hallway_hallway',
+            'state': 'idle',
+            'attributes': {
+                'friendly_name': 'Hallway Hallway',
+                'group_members': ['media_player.hallway_hallway'],
+                'media_content_id': 'http://192.168.1.2:8100/m/tok/media/ha/bell.mp3',
+            },
+        }
+        lounge = {
+            'entity_id': 'media_player.student_lounge',
+            'state': 'idle',
+            'attributes': {
+                'friendly_name': 'Student Lounge',
+                'group_members': ['media_player.student_lounge'],
+                'media_content_id': 'x-rincon:RINCON_000E58CDA3A201400',
+            },
+        }
+        helper_group = {
+            'entity_id': 'media_player.all_sonos_group',
+            'state': 'idle',
+            'attributes': {
+                'entity_id': [
+                    'media_player.classroom_classroom',
+                    'media_player.hallway_hallway',
+                    'media_player.student_lounge',
+                ],
+            },
+        }
+        self.hub.ha.states = AsyncMock(return_value=[classroom, hallway, lounge, helper_group])
+        resolved = await self.hub.resolve_play_target('media_player.all_sonos_group')
+        self.assertEqual(resolved, 'media_player.hallway_hallway')
+
+    async def test_play_local_falls_back_to_coordinator_on_sonos_join_timeout(self):
+        sonos_group = {
+            'entity_id': 'media_player.sonos_group',
+            'state': 'idle',
+            'attributes': {'friendly_name': 'All Sonos Speakers'},
+        }
+        hallway = {
+            'entity_id': 'media_player.hallway_hallway',
+            'state': 'idle',
+            'attributes': {
+                'friendly_name': 'Hallway Hallway',
+                'group_members': ['media_player.hallway_hallway'],
+            },
+        }
+        classroom = {
+            'entity_id': 'media_player.classroom_classroom',
+            'state': 'idle',
+            'attributes': {
+                'friendly_name': 'Classroom Classroom',
+                'group_members': ['media_player.classroom_classroom'],
+                'media_content_id': 'x-rincon:RINCON_000E58CDA3A201400',
+            },
+        }
+        self.hub.ha.states = AsyncMock(return_value=[sonos_group, hallway, classroom])
+        calls = []
+
+        async def fake_call_service(service, data, timeout=10.0):
+            calls.append((service, dict(data)))
+            if service == 'play_media' and len(calls) == 1:
+                raise app.HubError(
+                    'Home Assistant API returned 500: {"message":"Timeout while waiting for Sonos player to join the group Hallway: Hallway, Classroom"}'
+                )
+
+        self.hub.ha.call_service = AsyncMock(side_effect=fake_call_service)
+        with patch.object(app.asyncio, 'sleep', new=AsyncMock()):
+            await self.hub.play_local('media_player.sonos_group', 'ha', 'a.mp3')
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][1]['entity_id'], 'media_player.sonos_group')
+        self.assertEqual(calls[1][1]['entity_id'], 'media_player.hallway_hallway')
+
+    async def test_playlist_tick_handles_sonos_x_rincon_slave_and_coordinator(self):
+        slave = {
+            'entity_id': 'media_player.classroom_classroom',
+            'state': 'playing',
+            'attributes': {
+                'media_content_id': 'x-rincon:RINCON_000E58CDA3A201400',
+            },
+        }
+        coord = {
+            'entity_id': 'media_player.hallway_hallway',
+            'state': 'playing',
+            'attributes': {
+                'media_content_id': '',
+            },
+        }
+        self.hub.ha.states = AsyncMock(return_value=[slave, coord])
+        await self.hub.start_playlist(self.playlist, 'media_player.classroom_classroom')
+        q = self.hub.queues['media_player.classroom_classroom']
+        coord['attributes']['media_content_id'] = q['url']
+        await self.hub.playlist_tick()
+        self.assertTrue(q['seen_playing'])
+        self.assertIn('media_player.classroom_classroom', self.hub.queues)
+        coord['state'] = 'idle'
+        slave['state'] = 'idle'
+        await self.hub.playlist_tick()
+        await self.hub.playlist_tick()
+        self.assertEqual(q['index'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

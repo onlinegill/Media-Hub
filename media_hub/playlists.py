@@ -82,6 +82,20 @@ class PlaylistMixin:
                     state = states.get(target, {})
                     status = state.get("state", "unavailable")
                     content = str((state.get("attributes") or {}).get("media_content_id") or "")
+                    if content.startswith("x-rincon:"):
+                        coord = next(
+                            (
+                                s for s in states.values()
+                                if str((s.get("attributes") or {}).get("media_content_id") or "") == queue["url"]
+                            ),
+                            None,
+                        )
+                        if coord is not None:
+                            state = coord
+                            status = state.get("state", "unavailable")
+                            content = queue["url"]
+                        else:
+                            content = ""
                     # A new source started outside Media Hub. Relinquish ownership.
                     if queue["seen_playing"] and status in ("playing", "paused") and content and content != queue["url"]:
                         self.queues.pop(target, None)

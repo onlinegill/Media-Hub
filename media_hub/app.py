@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import ClientSession, ClientTimeout, web
 from playlists import PlaylistMixin
 
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.4"
 UI_PORT = 8099
 PUBLIC_PORT = 8100
 MEDIA_ROOT = Path("/media")
@@ -608,8 +608,35 @@ class MediaHub(PlaylistMixin):
             ]
 
             if candidates:
-                # Prefer an existing Sonos coordinator.
+                # 1. Prefer an active multi-member Sonos coordinator.
                 for candidate in candidates:
+                    candidate_attrs = (
+                        state_map[candidate].get("attributes") or {}
+                    )
+                    group_members = candidate_attrs.get("group_members")
+                    if (
+                        isinstance(group_members, list)
+                        and len(group_members) > 1
+                        and group_members[0] == candidate
+                    ):
+                        return candidate
+
+                # 2. Skip Sonos slave speakers (media_content_id starting with
+                # "x-rincon:") when HA's group_members attribute is stale.
+                non_slaves = [
+                    candidate
+                    for candidate in candidates
+                    if not str(
+                        (state_map[candidate].get("attributes") or {}).get(
+                            "media_content_id"
+                        )
+                        or ""
+                    ).startswith("x-rincon:")
+                ]
+                search_pool = non_slaves or candidates
+
+                # 3. Prefer a coordinator from the non-slave pool.
+                for candidate in search_pool:
                     candidate_attrs = (
                         state_map[candidate].get("attributes") or {}
                     )
@@ -621,12 +648,87 @@ class MediaHub(PlaylistMixin):
                     ):
                         return candidate
 
-                return candidates[0]
+                return search_pool[0]
 
         members = attrs.get("group_members")
         if isinstance(members, list) and members and members[0] in state_map:
             return str(members[0])
         return requested_entity_id
+
+    async def _resolve_sonos_fallback(
+        self,
+        failed_entity_id: str,
+        error_text: str = "",
+    ) -> str:
+        """Find the direct Sonos coordinator when a group wrapper or join fails."""
+        try:
+            states = await self.ha.states()
+        except Exception:
+            return failed_entity_id
+
+        media_players = [
+            item
+            for item in states
+            if str(item.get("entity_id", "")).startswith("media_player.")
+            and str(item.get("entity_id", "")) != failed_entity_id
+        ]
+
+        def is_sonos_slave(item: dict[str, Any]) -> bool:
+            attrs = item.get("attributes") or {}
+            content = str(attrs.get("media_content_id") or "")
+            return content.startswith("x-rincon:")
+
+        # 1. Parse coordinator zone name from HA's Sonos join timeout message:
+        #    "Timeout while waiting for Sonos player to join the group Hallway: ..."
+        match = re.search(
+            r"join the group\s+([^:}\"']+):",
+            error_text,
+            re.IGNORECASE,
+        )
+        if match:
+            zone_name = match.group(1).strip().lower()
+            if zone_name:
+                for item in media_players:
+                    if is_sonos_slave(item):
+                        continue
+                    eid = str(item.get("entity_id", ""))
+                    fname = str(
+                        (item.get("attributes") or {}).get("friendly_name")
+                        or ""
+                    ).lower()
+                    if (
+                        fname == zone_name
+                        or fname.startswith(f"{zone_name} ")
+                        or zone_name in eid.lower()
+                    ):
+                        return eid
+
+        # 2. Look for an active multi-member Sonos coordinator.
+        for item in media_players:
+            if is_sonos_slave(item):
+                continue
+            attrs = item.get("attributes") or {}
+            group_members = attrs.get("group_members")
+            eid = str(item.get("entity_id", ""))
+            if (
+                isinstance(group_members, list)
+                and len(group_members) > 1
+                and group_members[0] == eid
+            ):
+                return eid
+
+        # 3. If any speaker is a Sonos slave (x-rincon:...), pick a non-slave
+        #    Sonos speaker (one that has a group_members list attribute).
+        has_slaves = any(is_sonos_slave(item) for item in media_players)
+        if has_slaves:
+            for item in media_players:
+                if is_sonos_slave(item):
+                    continue
+                attrs = item.get("attributes") or {}
+                if isinstance(attrs.get("group_members"), list):
+                    return str(item.get("entity_id", ""))
+
+        return failed_entity_id
 
     async def wait_for_playing(
         self,
@@ -796,6 +898,10 @@ class MediaHub(PlaylistMixin):
         # 2026-10-09 at BBY). That surfaces as HubError, not TimeoutError, so
         # treat it as retriable too — the first attempt often wakes the
         # speakers enough for the retry to succeed.
+        # v1.2.4: When a universal/script wrapper (like media_player.sonos_group)
+        # fails on media_player.join because the speakers are already grouped on
+        # the Sonos hardware while HA's ZoneGroupTopology cache is stale, fall
+        # back directly to the coordinator speaker on retry so the bell still plays.
         last_exc: BaseException | None = None
         for attempt in (1, 2):
             try:
@@ -806,8 +912,20 @@ class MediaHub(PlaylistMixin):
                 last_exc = exc
                 LOGGER.warning(
                     "play_media timed out (attempt %d/2) for %s; retrying",
-                    attempt, effective_entity_id,
+                    attempt, data["entity_id"],
                 )
+                if attempt == 1:
+                    fallback = await self._resolve_sonos_fallback(
+                        str(data["entity_id"])
+                    )
+                    if fallback != data["entity_id"]:
+                        LOGGER.warning(
+                            "Falling back from %s to coordinator %s for retry",
+                            data["entity_id"], fallback,
+                        )
+                        data["entity_id"] = fallback
+                        session_info["effective_entity_id"] = fallback
+                        self.active_media_sessions[fallback] = session_info
                 await asyncio.sleep(2)
             except HubError as exc:
                 if "join the group" not in str(exc).lower():
@@ -815,9 +933,21 @@ class MediaHub(PlaylistMixin):
                 last_exc = exc
                 LOGGER.warning(
                     "Sonos group join timed out (attempt %d/2) for %s; retrying",
-                    attempt, effective_entity_id,
+                    attempt, data["entity_id"],
                 )
-                await asyncio.sleep(5)
+                if attempt == 1:
+                    fallback = await self._resolve_sonos_fallback(
+                        str(data["entity_id"]), str(exc)
+                    )
+                    if fallback != data["entity_id"]:
+                        LOGGER.warning(
+                            "Falling back from %s to coordinator %s for retry",
+                            data["entity_id"], fallback,
+                        )
+                        data["entity_id"] = fallback
+                        session_info["effective_entity_id"] = fallback
+                        self.active_media_sessions[fallback] = session_info
+                await asyncio.sleep(2)
         if last_exc is not None:
             raise last_exc
         return media_url

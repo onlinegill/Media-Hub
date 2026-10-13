@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.2.4
+
+### Fixed
+- Sonos coordinator resolution & fallback (`resolve_play_target` and `_play_local`):
+  - Prefer active multi-member Sonos coordinators and skip Sonos slave speakers (`media_content_id: x-rincon:...`) when resolving helper groups (such as `media_player.all_sonos_group`), even when Home Assistant's `group_members` attribute is out of sync with the Sonos hardware topology.
+  - When a custom group/script entity (such as `media_player.sonos_group`) fails on attempt 1 with `Timeout while waiting for Sonos player to join the group <Zone>: ...` or `TimeoutError`, automatically fall back to the direct Sonos coordinator speaker on attempt 2 so scheduled bells still play.
+- Sonos playlist monitoring (`playlist_tick`):
+  - Recognize Sonos slave topology URIs (`x-rincon:...`) and inspect the active coordinator's playback state so playlists started on grouped Sonos speakers confirm playback properly instead of timing out after 60s (`playback was not confirmed`) or falsely canceling as an external source.
+- Sync `APP_VERSION` (`1.2.4`) with `config.yaml`.
+
+## 1.2.3
 
 ### Fixed
 - Bell playback resilience (v1.2.3): when Home Assistant answers HTTP 500
